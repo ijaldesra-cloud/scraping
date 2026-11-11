@@ -1,4 +1,4 @@
-"""Endpoint serverless: ambil satu post Instagram publik + komentarnya → CSV.
+"""Endpoint serverless: ambil satu post publik (Instagram/TikTok/X) + komentarnya → CSV.
 
 Dipakai dashboard `web/` lewat form "Ambil CSV dari link post".
 Berjalan sebagai Vercel Python function (`/api/scrape`) atau server lokal:
@@ -6,12 +6,20 @@ Berjalan sebagai Vercel Python function (`/api/scrape`) atau server lokal:
     python api/scrape.py          # http://127.0.0.1:8000/api/scrape
 
 Body request:  {"url": "https://www.instagram.com/p/SHORTCODE/"}
-Balasan:       JSON {ok, shortcode, ..., csv: {post, comments}}
+Balasan:       JSON {ok, platform, shortcode, ..., csv: {post, comments}}
 
-Env var opsional (sangat disarankan di Vercel):
-    IG_USERNAME    akun Instagram yang dipakai
-    IG_SESSIONID   nilai cookie `sessionid` akun tersebut
-Tanpa sesi, Instagram membatasi respons dan sering meminta login.
+Platform yang dikenali:
+    Instagram  https://www.instagram.com/p/…, /reel/…, /tv/…      (instaloader)
+    TikTok     https://www.tiktok.com/@user/video/…, vm.tiktok.com/…  (yt-dlp)
+    X          https://x.com/user/status/…, twitter.com/…           (syndication)
+
+Env var:
+    IG_USERNAME / IG_SESSIONID / IG_CSRFTOKEN   sesi Instagram (sangat disarankan)
+    TIKTOK_COOKIES                              header cookie TikTok, opsional
+    ALLOW_ORIGIN                                origin CORS (default *)
+
+Catatan: Instagram butuh sesi untuk komentar; TikTok dan X hanya memberi
+komentar lewat API resmi/berbayar, jadi CSV-nya bisa berisi metadata saja.
 """
 
 from __future__ import annotations
@@ -23,8 +31,10 @@ import os
 import re
 import sys
 import time
+import urllib.error
+import urllib.request
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
@@ -34,23 +44,33 @@ if ROOT not in sys.path:
 
 from sentiment import score as sentiment_score  # noqa: E402
 
-SHORTCODE_RE = re.compile(r"instagram\.com/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)")
-BARE_CODE_RE = re.compile(r"^[A-Za-z0-9_-]{5,20}$")
+IG_RE = re.compile(r"instagram\.com/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)", re.I)
+IG_BARE_RE = re.compile(r"^[A-Za-z0-9_-]{5,20}$")
+TT_RE = re.compile(r"tiktok\.com/(?:@[A-Za-z0-9_.-]+/)?(?:video|photo|v)/(\d{6,25})", re.I)
+TT_SHORT_PATH_RE = re.compile(r"^/(?:t/)?([A-Za-z0-9]{5,})/?$")
+X_RE = re.compile(r"(?:twitter|x)\.com/[A-Za-z0-9_]{1,30}/status(?:es)?/(\d{1,25})", re.I)
+
+PLATFORM_NAME = {"instagram": "Instagram", "tiktok": "TikTok", "x": "X"}
 MAX_COMMENTS = 250
 MAX_REPLIES_PER_COMMENT = 5
 RATE_LIMIT_SECONDS = 10
+HTTP_TIMEOUT = 25
+UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
 
 # Jeda per IP supaya satu instance tidak dipakai berlebihan.
 _last_call: dict[str, float] = {}
 
 POST_HEADER = [
-    "tanggal", "url", "shortcode", "tipe", "likes", "jumlah_komentar",
+    "platform", "tanggal", "url", "shortcode", "tipe", "likes", "jumlah_komentar",
     "komentar_diambil", "sentimen_positif", "sentimen_negatif",
     "jumlah_media", "caption",
 ]
 
 COMMENT_HEADER = [
-    "tanggal_post", "post_url", "shortcode", "penulis", "komentar",
+    "platform", "tanggal_post", "post_url", "shortcode", "penulis", "komentar",
     "tanggal_komentar", "likes_komentar", "balasan_dari", "sentimen", "skor",
 ]
 
@@ -63,31 +83,130 @@ class BadRequest(ScrapeError):
     """Input pengguna tidak valid (HTTP 400)."""
 
 
-def parse_shortcode(raw: str) -> str:
-    """Ambil shortcode dari URL post/reel/tv Instagram atau input shortcode polos."""
+# --------------------------------------------------------------------------
+# Parsing link
+# --------------------------------------------------------------------------
+
+def _is_tiktok_short(url: str) -> bool:
+    """Cek link pendek TikTok: vm.tiktok.com/ZM…, vt.tiktok.com/ZS…, /t/ZM…"""
+    parsed = urlparse(url)
+    if "tiktok.com" not in (parsed.hostname or "").lower():
+        return False
+    return bool(TT_SHORT_PATH_RE.match(parsed.path or "")) and not TT_RE.search(url)
+
+
+def parse_target(raw: str) -> tuple[str, str]:
+    """Tebak platform + id post dari sebuah link.
+
+    Mengembalikan ("instagram"|"tiktok"|"x", id). Untuk link pendek TikTok
+    (`vm.tiktok.com/…`) id masih kosong dan di-resolve saat pengambilan data.
+    """
     value = (raw or "").strip()
     if not value:
         raise BadRequest("Link post masih kosong.")
 
-    match = SHORTCODE_RE.search(value)
-    if match:
-        return match.group(1)
+    if match := IG_RE.search(value):
+        return "instagram", match.group(1)
+    if match := X_RE.search(value):
+        return "x", match.group(1)
+    if match := TT_RE.search(value):
+        return "tiktok", match.group(1)
 
     parsed = urlparse(value)
     host = (parsed.hostname or "").lower()
-    if host and "instagram.com" not in host:
-        raise BadRequest("Itu bukan link Instagram. Contoh: https://www.instagram.com/p/xxxxx/")
+    if _is_tiktok_short(value):
+        return "tiktok", ""
+    if host and "instagram.com" in host:
+        raise BadRequest(
+            "Link Instagram tidak dikenali. Contoh: https://www.instagram.com/p/xxxxx/"
+        )
+    if host and ("tiktok.com" in host or "douyin.com" in host):
+        raise BadRequest(
+            "Link TikTok tidak dikenali. Contoh: https://www.tiktok.com/@akun/video/123…"
+        )
+    if host and ("x.com" in host or "twitter.com" in host):
+        raise BadRequest("Link X tidak dikenali. Contoh: https://x.com/akun/status/123…")
 
-    if BARE_CODE_RE.match(value):
-        return value
+    if IG_BARE_RE.match(value):
+        return "instagram", value
 
     raise BadRequest(
-        "Link tidak dikenali. Tempel link post/reel, misalnya "
-        "https://www.instagram.com/p/xxxxx/"
+        "Link tidak dikenali. Tempel link post Instagram, TikTok, atau X. "
+        "Contoh: https://www.instagram.com/p/xxxxx/"
     )
 
 
-def _loader():
+# --------------------------------------------------------------------------
+# Helper HTTP + tanggal
+# --------------------------------------------------------------------------
+
+def _http_get(url: str, headers: dict | None = None, max_bytes: int = 12_000_000) -> bytes:
+    request = urllib.request.Request(url, headers={"user-agent": UA, **(headers or {})})
+    try:
+        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
+            return response.read(max_bytes)
+    except urllib.error.HTTPError as exc:
+        if exc.code in (404, 410):
+            raise ScrapeError("Post tidak ditemukan, dihapus, atau bukan konten publik.")
+        if exc.code in (401, 403):
+            raise ScrapeError(
+                "Platform menolak permintaan tanpa login (HTTP %d). Coba lagi nanti." % exc.code
+            )
+        if exc.code == 429:
+            raise ScrapeError("Kena rate limit platform (HTTP 429). Coba lagi beberapa menit.")
+        raise ScrapeError("Platform membalas HTTP %d. Coba lagi nanti." % exc.code)
+    except urllib.error.URLError as exc:
+        raise ScrapeError("Gagal menghubungi platform: %s." % (exc.reason,))
+    except TimeoutError:
+        raise ScrapeError("Permintaan ke platform terlalu lama (timeout). Coba lagi.")
+
+
+def _http_json(url: str, headers: dict | None = None) -> dict:
+    raw = _http_get(url, headers)
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise ScrapeError("Platform tidak mengirim data JSON yang bisa dibaca.")
+    if not isinstance(data, dict):
+        raise ScrapeError("Format data dari platform tidak dikenali.")
+    return data
+
+
+def _to_int(value) -> int:
+    try:
+        return max(int(value), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _from_epoch(value) -> datetime | None:
+    try:
+        return datetime.fromtimestamp(int(value), tz=timezone.utc).replace(tzinfo=None)
+    except (TypeError, ValueError, OSError, OverflowError):
+        return None
+
+
+def _from_iso(value) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S%z"):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=None)
+        except ValueError:
+            continue
+    return None
+
+
+def _clean_text(value) -> str:
+    return " ".join(str(value or "").replace("\r", " ").split())
+
+
+# --------------------------------------------------------------------------
+# Adapter Instagram (instaloader)
+# --------------------------------------------------------------------------
+
+def _ig_loader():
     """Instaloader tanpa unduhan file, memakai sesi dari env bila tersedia."""
     import instaloader
 
@@ -113,7 +232,7 @@ def _loader():
     return loader
 
 
-def _media_urls(post) -> list[str]:
+def _ig_media_urls(post) -> list[str]:
     urls: list[str] = []
     try:
         if post.typename == "GraphSidecar":
@@ -126,17 +245,21 @@ def _media_urls(post) -> list[str]:
     return [u for u in urls if u]
 
 
-def _collect_comments(post) -> list[dict]:
+def _ig_comments(post) -> list[dict]:
     rows: list[dict] = []
     try:
         for comment in post.get_comments():
-            rows.append(_comment_row(comment, parent=None))
+            rows.append(_comment_row(comment.owner.username if comment.owner else "",
+                                     comment.text, comment.likes, comment.created_at, None))
             replies = 0
             try:
                 for answer in comment.answers:
                     if replies >= MAX_REPLIES_PER_COMMENT:
                         break
-                    rows.append(_comment_row(answer, parent=comment.id))
+                    rows.append(_comment_row(
+                        answer.owner.username if answer.owner else "",
+                        answer.text, answer.likes, answer.created_at, comment.id,
+                    ))
                     replies += 1
             except Exception:
                 pass
@@ -147,52 +270,7 @@ def _collect_comments(post) -> list[dict]:
     return rows[:MAX_COMMENTS]
 
 
-def _comment_row(comment, parent) -> dict:
-    label, value = sentiment_score(comment.text or "")
-    return {
-        "author": comment.owner.username if comment.owner else "",
-        "text": (comment.text or "").replace("\r", " ").replace("\n", " "),
-        "likes": int(comment.likes or 0),
-        "created_at": comment.created_at,
-        "parent_id": parent,
-        "sentiment": label,
-        "score": value,
-    }
-
-
-def build_post_csv(meta: dict, media: list[str], sentiment: Counter) -> str:
-    """Satu baris CSV berisi ringkasan post."""
-    buf = io.StringIO(newline="")
-    writer = csv.writer(buf, lineterminator="\r\n")
-    writer.writerow(POST_HEADER)
-    writer.writerow([
-        meta["date"], meta["url"], meta["shortcode"], meta["type"],
-        meta["likes"], meta["comment_count"], meta["comments_fetched"],
-        sentiment.get("positif", 0) + sentiment.get("sangat positif", 0),
-        sentiment.get("negatif", 0) + sentiment.get("sangat negatif", 0),
-        len(media), " ".join((meta["caption"] or "").split()),
-    ])
-    return buf.getvalue()
-
-
-def build_comments_csv(meta: dict, comments: list[dict]) -> str:
-    """Satu baris per komentar/balasan, sudah lengkap dengan sentimen."""
-    buf = io.StringIO(newline="")
-    writer = csv.writer(buf, lineterminator="\r\n")
-    writer.writerow(COMMENT_HEADER)
-    for c in comments:
-        created = c["created_at"]
-        writer.writerow([
-            meta["date"], meta["url"], meta["shortcode"], c["author"],
-            " ".join(c["text"].split()),
-            created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else "",
-            c["likes"], c["parent_id"] or "", c["sentiment"], c["score"],
-        ])
-    return buf.getvalue()
-
-
-def scrape(raw_url: str) -> dict:
-    """Ambil post + komentar, kembalikan payload JSON siap kirim."""
+def _instagram(post_id: str) -> dict:
     import instaloader
     from instaloader import exceptions as il_exc
 
@@ -203,11 +281,10 @@ def scrape(raw_url: str) -> dict:
         if (exc := getattr(il_exc, name, None)) is not None
     ) or (il_exc.QueryReturnedBadRequestException,)
 
-    shortcode = parse_shortcode(raw_url)
-    loader = _loader()
+    loader = _ig_loader()
 
     try:
-        post = instaloader.Post.from_shortcode(loader.context, shortcode)
+        post = instaloader.Post.from_shortcode(loader.context, post_id)
     except not_found:
         raise ScrapeError("Post tidak ditemukan, dihapus, atau bukan akun publik.")
     except il_exc.LoginRequiredException:
@@ -224,33 +301,302 @@ def scrape(raw_url: str) -> dict:
     except il_exc.ConnectionException:
         raise ScrapeError("Gagal menghubungi Instagram (rate limit / jaringan). Coba lagi nanti.")
 
-    media = _media_urls(post)
-    comments = _collect_comments(post)
-    sentiment = Counter(c["sentiment"] for c in comments)
-
+    media = _ig_media_urls(post)
+    comments = _ig_comments(post)
     type_map = {"GraphVideo": "video", "GraphImage": "foto", "GraphSidecar": "sidecar"}
+
     meta = {
+        "platform": "instagram",
         "shortcode": post.shortcode,
         "url": f"https://www.instagram.com/p/{post.shortcode}/",
         "date": post.date_utc.strftime("%Y-%m-%d"),
         "type": type_map.get(post.typename, post.typename),
-        "likes": max(int(post.likes or 0), 0),
-        "comment_count": int(post.comments or 0),
-        "comments_fetched": len(comments),
+        "author": post.owner_username or "",
+        "likes": _to_int(post.likes),
+        "comment_count": _to_int(post.comments),
         "caption": post.caption or "",
     }
+    return {"meta": meta, "media": media, "comments": comments, "note": ""}
+
+
+# --------------------------------------------------------------------------
+# Adapter TikTok (yt-dlp + endpoint komentar)
+# --------------------------------------------------------------------------
+
+def _tiktok_comments(post_id: str) -> tuple[list[dict], str]:
+    """Ambil komentar teratas. TikTok sering membalas kosong tanpa cookie."""
+    endpoint = (
+        "https://www.tiktok.com/api/comment/list/"
+        f"?aweme_id={post_id}&count=50&cursor=0&aid=1988&app_language=id"
+        "&app_name=tiktok_web&browser_language=id-ID&browser_platform=Win32"
+        "&channel=tiktok_web&device_platform=web_pc&priority_region=ID&region=ID"
+    )
+    headers = {
+        "referer": "https://www.tiktok.com/",
+        "accept": "application/json, text/plain, */*",
+    }
+    cookie = os.environ.get("TIKTOK_COOKIES", "").strip()
+    if cookie:
+        headers["cookie"] = cookie
+
+    rows: list[dict] = []
+    cursor = 0
+    for _ in range(6):
+        try:
+            payload = _http_json(endpoint + f"&cursor={cursor}", headers)
+        except ScrapeError:
+            break
+        batch = payload.get("comments") or []
+        if not isinstance(batch, list) or not batch:
+            break
+        for item in batch:
+            if not isinstance(item, dict):
+                continue
+            rows.append(_comment_row(
+                (item.get("user") or {}).get("unique_id", ""),
+                item.get("text"), item.get("digg_count"),
+                _from_epoch(item.get("create_time")), None,
+            ))
+            replies = 0
+            for reply in item.get("reply_comment") or []:
+                if replies >= MAX_REPLIES_PER_COMMENT or not isinstance(reply, dict):
+                    break
+                rows.append(_comment_row(
+                    (reply.get("user") or {}).get("unique_id", ""),
+                    reply.get("text"), reply.get("digg_count"),
+                    _from_epoch(reply.get("create_time")), item.get("cid"),
+                ))
+                replies += 1
+            if len(rows) >= MAX_COMMENTS:
+                break
+        if len(rows) >= MAX_COMMENTS or not payload.get("has_more"):
+            break
+        cursor = _to_int(payload.get("cursor"))
+
+    if rows:
+        return rows[:MAX_COMMENTS], ""
+    return [], (
+        "TikTok membatasi daftar komentar untuk permintaan tanpa login, jadi CSV "
+        "komentar kosong. Post dan metriknya tetap terisi."
+    )
+
+
+def _tiktok_media(info: dict, entries: list[dict]) -> list[str]:
+    """URL media dari hasil yt-dlp (video tunggal atau carousel foto)."""
+    if entries:
+        return [
+            url
+            for entry in entries
+            if (url := entry.get("url") or entry.get("thumbnail"))
+        ]
+
+    formats = [
+        f for f in (info.get("formats") or [])
+        if f.get("vcodec") not in (None, "none") and f.get("url")
+    ]
+    if formats:
+        best = max(formats, key=lambda f: (f.get("height") or 0, f.get("tbr") or 0))
+        return [best["url"]]
+    if info.get("url"):
+        return [info["url"]]
+    return [info["thumbnail"]] if info.get("thumbnail") else []
+
+
+def _tiktok(url: str) -> dict:
+    """yt-dlp dipakai karena halaman TikTok sendiri sering diblokir WAF."""
+    try:
+        import yt_dlp
+    except ImportError:
+        raise ScrapeError("Server belum memasang yt-dlp, jadi TikTok belum bisa diambil.")
+
+    options = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "noplaylist": True,
+        "socket_timeout": HTTP_TIMEOUT,
+    }
+    try:
+        with yt_dlp.YoutubeDL(options) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as exc:
+        text = str(exc).lower()
+        if any(word in text for word in ("private", "not available", "404", "removed")):
+            raise ScrapeError("Post TikTok tidak ditemukan, privat, atau dihapus.")
+        raise ScrapeError("Gagal mengambil data TikTok. Coba lagi nanti.")
+
+    if not isinstance(info, dict):
+        raise ScrapeError("Data post TikTok tidak bisa dibaca.")
+
+    entries = [e for e in (info.get("entries") or []) if isinstance(e, dict)]
+    post_id = str(info.get("id") or "")
+    author = info.get("uploader") or info.get("channel") or ""
+    created = _from_epoch(info.get("timestamp"))
+    if created is None and info.get("upload_date"):
+        try:
+            created = datetime.strptime(str(info["upload_date"]), "%Y%m%d")
+        except ValueError:
+            created = None
+
+    comments, note = _tiktok_comments(post_id)
+    meta = {
+        "platform": "tiktok",
+        "shortcode": post_id,
+        "url": info.get("webpage_url") or url,
+        "date": (created or datetime.utcnow()).strftime("%Y-%m-%d"),
+        "type": "foto" if entries else "video",
+        "author": author,
+        "likes": _to_int(info.get("like_count")),
+        "comment_count": _to_int(info.get("comment_count")),
+        "caption": info.get("description") or info.get("title") or "",
+    }
+    return {
+        "meta": meta,
+        "media": _tiktok_media(info, entries),
+        "comments": comments,
+        "note": note,
+    }
+
+
+# --------------------------------------------------------------------------
+# Adapter X (endpoint syndication publik)
+# --------------------------------------------------------------------------
+
+def _x(tweet_id: str) -> dict:
+    payload = _http_json(
+        f"https://cdn.syndication.twimg.com/tweet-result?id={tweet_id}&lang=id&token=a",
+        {"accept": "application/json"},
+    )
+    if payload.get("__typename") not in (None, "Tweet") or not payload.get("id_str"):
+        raise ScrapeError("Post X tidak ditemukan, dihapus, atau akunnya dikunci.")
+
+    text = payload.get("text") or ""
+    for entity in ((payload.get("entities") or {}).get("urls") or []):
+        short = entity.get("url")
+        if short:
+            text = text.replace(short, entity.get("expanded_url") or short)
+
+    media = [
+        m.get("media_url_https") or m.get("media_url") or ""
+        for m in (payload.get("mediaDetails") or [])
+        if isinstance(m, dict)
+    ]
+    media = [u for u in media if u]
+    if not media:
+        media = [p.get("url") for p in (payload.get("photos") or []) if isinstance(p, dict)]
+        media = [u for u in media if u]
+
+    has_video = any(
+        isinstance(m, dict) and (m.get("type") or "").lower() in ("video", "animated_gif")
+        for m in (payload.get("mediaDetails") or [])
+    )
+    author = (payload.get("user") or {}).get("screen_name") or ""
+    created = _from_iso(payload.get("created_at")) or datetime.utcnow()
+
+    meta = {
+        "platform": "x",
+        "shortcode": str(payload.get("id_str") or tweet_id),
+        "url": f"https://x.com/{author}/status/{payload.get('id_str') or tweet_id}",
+        "date": created.strftime("%Y-%m-%d"),
+        "type": "video" if has_video else ("foto" if media else "teks"),
+        "author": author,
+        "likes": _to_int(payload.get("favorite_count")),
+        "comment_count": _to_int(payload.get("conversation_count")),
+        "caption": text,
+    }
+    return {
+        "meta": meta,
+        "media": media,
+        "comments": [],
+        "note": (
+            "X hanya menyediakan daftar balasan lewat API resmi berbayar, jadi CSV "
+            "komentar kosong. Post dan metriknya tetap terisi."
+        ),
+    }
+
+
+# --------------------------------------------------------------------------
+# Normalisasi + CSV
+# --------------------------------------------------------------------------
+
+def _comment_row(author: str, text, likes, created_at, parent_id) -> dict:
+    label, value = sentiment_score(text or "")
+    return {
+        "author": author or "",
+        "text": _clean_text(text),
+        "likes": _to_int(likes),
+        "created_at": created_at,
+        "parent_id": parent_id,
+        "sentiment": label,
+        "score": value,
+    }
+
+
+def build_post_csv(meta: dict, media: list[str], sentiment: Counter) -> str:
+    """Satu baris CSV berisi ringkasan post."""
+    buf = io.StringIO(newline="")
+    writer = csv.writer(buf, lineterminator="\r\n")
+    writer.writerow(POST_HEADER)
+    writer.writerow([
+        meta["platform"], meta["date"], meta["url"], meta["shortcode"], meta["type"],
+        meta["likes"], meta["comment_count"], meta["comments_fetched"],
+        sentiment.get("positif", 0) + sentiment.get("sangat positif", 0),
+        sentiment.get("negatif", 0) + sentiment.get("sangat negatif", 0),
+        len(media), _clean_text(meta["caption"]),
+    ])
+    return buf.getvalue()
+
+
+def build_comments_csv(meta: dict, comments: list[dict]) -> str:
+    """Satu baris per komentar/balasan, sudah lengkap dengan sentimen."""
+    buf = io.StringIO(newline="")
+    writer = csv.writer(buf, lineterminator="\r\n")
+    writer.writerow(COMMENT_HEADER)
+    for c in comments:
+        created = c["created_at"]
+        writer.writerow([
+            meta["platform"], meta["date"], meta["url"], meta["shortcode"],
+            c["author"], _clean_text(c["text"]),
+            created.strftime("%Y-%m-%d %H:%M:%S") if isinstance(created, datetime) else "",
+            c["likes"], c["parent_id"] or "", c["sentiment"], c["score"],
+        ])
+    return buf.getvalue()
+
+
+def scrape(raw_url: str) -> dict:
+    """Ambil post + komentar dari platform mana pun, kembalikan payload JSON."""
+    platform, post_id = parse_target(raw_url)
+    url = (raw_url or "").strip()
+
+    if platform == "instagram":
+        result = _instagram(post_id)
+    elif platform == "tiktok":
+        result = _tiktok(url)
+    else:
+        result = _x(post_id)
+
+    meta = result["meta"]
+    comments = result["comments"]
+    media = result["media"]
+    meta["comments_fetched"] = len(comments)
+    sentiment = Counter(c["sentiment"] for c in comments)
 
     return {
         "ok": True,
         **meta,
         "media": media,
         "sentiment": dict(sentiment),
+        "note": result.get("note", ""),
         "csv": {
             "post": build_post_csv(meta, media, sentiment),
             "comments": build_comments_csv(meta, comments),
         },
     }
 
+
+# --------------------------------------------------------------------------
+# HTTP handler (Vercel + server lokal)
+# --------------------------------------------------------------------------
 
 def _client_ip(headers) -> str:
     forwarded = headers.get("x-forwarded-for") or ""
@@ -279,8 +625,12 @@ class handler(BaseHTTPRequestHandler):
         self._send(200, {
             "ok": True,
             "endpoint": "/api/scrape",
+            "platforms": list(PLATFORM_NAME.values()),
             "usage": 'POST {"url": "https://www.instagram.com/p/SHORTCODE/"}',
-            "session": bool(os.environ.get("IG_SESSIONID")),
+            "session": {
+                "instagram": bool(os.environ.get("IG_SESSIONID")),
+                "tiktok": bool(os.environ.get("TIKTOK_COOKIES")),
+            },
         })
 
     def do_POST(self):  # noqa: N802

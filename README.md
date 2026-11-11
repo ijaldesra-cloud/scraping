@@ -14,7 +14,7 @@ lalu menyusunnya jadi data terstruktur + laporan respon publik.
 | `analyze.py` | Hitung metrik, sentimen, tema → CSV + `laporan.md` |
 | `build_dashboard.py` | Agregasi data → `web/data.js` untuk dashboard |
 | `web/` | Dashboard EDA (HTML + CSS + JS murni, tanpa library) + PWA |
-| `api/scrape.py` | Endpoint `POST /api/scrape`: 1 link post → CSV post & komentar |
+| `api/scrape.py` | Endpoint `POST /api/scrape`: 1 link IG/TikTok/X → CSV post & komentar |
 | `vercel.json` | Konfigurasi deploy Vercel (static `web/` + Python function) |
 | `make_session.py` | Bikin file session instaloader dari cookie `sessionid` |
 | `sentiment.py` | Kamus sentimen bahasa Indonesia |
@@ -24,7 +24,7 @@ lalu menyusunnya jadi data terstruktur + laporan respon publik.
 
 ```bash
 python -m venv .venv
-.venv/Scripts/python -m pip install instaloader
+.venv/Scripts/python -m pip install -r requirements.txt
 npm install
 ```
 
@@ -117,9 +117,15 @@ Panel ditutup dengan tombol ×, klik latar, atau tombol Esc.
 
 ## Ambil CSV dari satu link post
 
-Di dashboard ada form **Ambil CSV dari link post**: tempel URL post/reel Instagram
-publik, lalu server mengambil metadata post, link media, dan komentarnya, memberi
-sentimen, dan mengirim CSV siap unduh (post + komentar).
+Di dashboard ada form **Ambil CSV dari link post**: tempel URL post publik dari
+Instagram, TikTok, atau X, lalu server mengambil metadata post, link media, dan
+komentarnya, memberi sentimen, dan mengirim CSV siap unduh (post + komentar).
+
+| Platform | Link yang dikenali | Diambil dengan | Komentar |
+| --- | --- | --- | --- |
+| Instagram | `instagram.com/p/…`, `/reel/…`, `/tv/…` | `instaloader` + sesi | ya, sampai 250 |
+| TikTok | `tiktok.com/@akun/video/…`, `vm.tiktok.com/…` | `yt-dlp` | hanya bila `TIKTOK_COOKIES` diterima TikTok |
+| X | `x.com/akun/status/…`, `twitter.com/…` | endpoint syndication publik | tidak (butuh API resmi berbayar) |
 
 Endpoint-nya ada di `api/scrape.py`:
 
@@ -130,9 +136,11 @@ Content-Type: application/json
 {"url": "https://www.instagram.com/p/SHORTCODE/"}
 ```
 
-Balasannya JSON `{ok, shortcode, date, likes, comment_count, comments_fetched,
-media, sentiment, csv: {post, comments}}`. Tanpa `IG_SESSIONID` Instagram hampir
-selalu menolak permintaan anonim, jadi set env var dulu (lihat bawah).
+Balasannya JSON `{ok, platform, shortcode, url, author, date, type, likes,
+comment_count, comments_fetched, caption, media, sentiment, note,
+csv: {post, comments}}`. `note` berisi penjelasan bila sebagian data tidak bisa
+diambil — tampilkan saja ke pengguna. Tanpa `IG_SESSIONID` Instagram hampir selalu
+menolak permintaan anonim, jadi set env var dulu (lihat bawah).
 
 Jalankan lokal tanpa Vercel:
 
@@ -158,6 +166,7 @@ lewat server yang sama origin-nya — cara paling mudah: `vercel dev`.
    | `IG_USERNAME` | disarankan | akun Instagram yang dipakai |
    | `IG_SESSIONID` | disarankan | nilai cookie `sessionid` akun itu |
    | `IG_CSRFTOKEN` | opsional | cookie `csrftoken` (kadang diperlukan) |
+   | `TIKTOK_COOKIES` | opsional | header `Cookie` TikTok (mis. `ttwid=…; msToken=…`) untuk komentar |
    | `ALLOW_ORIGIN` | opsional | default `*`; batasi ke domain dashboard bila perlu |
 
    Cookie diambil seperti di bagian **Login** di atas. Perlakukan seperti
@@ -181,3 +190,12 @@ Fitur "Ambil CSV dari link" tidak bergantung pada file arsip itu.
 - Endpoint `/api/scrape` membatasi komentar yang diambil (maks. 250, balasan
   maks. 5 per komentar) dan punya jeda 10 detik per IP per instance, supaya
   tidak melewati batas waktu function dan tidak dipakai berlebihan.
+- TikTok: metadata (caption, like, jumlah komentar, media) diambil lewat `yt-dlp`
+  karena halaman TikTok sendiri sering membalas halaman anti-bot. Daftar komentar
+  TikTok hanya terbuka untuk sesi yang valid; tanpa `TIKTOK_COOKIES` CSV komentar
+  kosong dan `note` menjelaskannya.
+- X: tidak ada jalur publik untuk daftar balasan. Yang tersedia hanya post,
+  penulis, waktu, like, jumlah balasan, dan media — CSV komentar kosong.
+  Untuk balasan X perlu X API (berbayar) atau layanan pihak ketiga.
+- Balasan/komentar yang disembunyikan platform tidak akan muncul, jadi angka
+  `comments_fetched` bisa lebih kecil dari `comment_count`.

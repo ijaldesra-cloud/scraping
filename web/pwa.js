@@ -96,9 +96,10 @@
 
     result.innerHTML =
       '<div class="stat-row">' +
+      statBox("Platform", data.platform_name || data.platform || "-") +
       statBox("Tanggal post", data.date || "-") +
       statBox("Like", fmt(data.likes)) +
-      statBox("Komentar di IG", fmt(data.comment_count)) +
+      statBox("Komentar di platform", fmt(data.comment_count)) +
       statBox("Komentar diambil", fmt(data.comments_fetched)) +
       statBox("Sentimen +/-", fmt(pos) + " / " + fmt(neg)) +
       statBox("Media", fmt((data.media || []).length)) +
@@ -106,6 +107,7 @@
       '<p class="tool-caption"><a href="' + escapeHtml(data.url) +
       '" target="_blank" rel="noopener">' + escapeHtml(data.url) + "</a><br>" +
       escapeHtml((data.caption || "(tanpa caption)").slice(0, 220)) + "</p>" +
+      (data.note ? '<p class="tool-caption tool-note">' + escapeHtml(data.note) + "</p>" : "") +
       '<div class="modal-actions">' +
       '<button type="button" class="btn-link" data-csv="post">Unduh CSV post</button>' +
       '<button type="button" class="btn-link" data-csv="comments">Unduh CSV komentar</button>' +
@@ -117,7 +119,8 @@
       btn.addEventListener("click", function () {
         const isPost = btn.dataset.csv === "post";
         download(
-          (isPost ? "post-" : "komentar-") + data.shortcode + ".csv",
+          (isPost ? "post-" : "komentar-") + (data.platform || "sosmed") + "-" +
+            data.shortcode + ".csv",
           isPost ? data.csv.post : data.csv.comments
         );
       });
@@ -131,7 +134,7 @@
 
     submit.disabled = true;
     result.hidden = true;
-    setStatus("Mengambil data dari Instagram… biasanya 10–40 detik.", "busy");
+    setStatus("Mengambil data dari link… biasanya 10–40 detik.", "busy");
 
     fetch("api/scrape", {
       method: "POST",
@@ -151,7 +154,10 @@
       })
       .then(function (data) {
         // CSV komentar langsung diunduh; CSV post tersedia lewat tombol.
-        download("komentar-" + data.shortcode + ".csv", data.csv.comments);
+        download(
+          "komentar-" + (data.platform || "sosmed") + "-" + data.shortcode + ".csv",
+          data.csv.comments
+        );
         renderResult(data);
         setStatus("Selesai. CSV komentar sudah terunduh.", "ok");
       })

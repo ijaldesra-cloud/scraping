@@ -436,3 +436,5 @@ footer {
 .tool-caption { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.6; word-break: break-word; }
 .tool-caption a { color: var(--accent-2); text-decoration: none; }
 .tool-caption a:hover { text-decoration: underline; }
+.tool-note { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line);
+  border-left: 3px solid #d8a63a; border-radius: 6px; color: #d9c9a3; }

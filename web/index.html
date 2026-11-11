@@ -167,13 +167,14 @@
   <section class="card tools" id="tools">
     <header>
       <h2>Ambil CSV dari link post</h2>
-      <p>Tempel link post atau reel Instagram publik, lalu unduh datanya sebagai CSV.
+      <p>Tempel link post publik dari <strong>Instagram</strong>, <strong>TikTok</strong>,
+         atau <strong>X</strong>, lalu unduh datanya sebagai CSV.
          Fitur ini memanggil backend <code>/api/scrape</code> (jalan di Vercel).</p>
     </header>
     <form class="tool-form" id="link-form">
-      <label class="sr-only" for="link-input">Link post Instagram</label>
+      <label class="sr-only" for="link-input">Link post Instagram, TikTok, atau X</label>
       <input id="link-input" name="url" type="url" inputmode="url" autocomplete="off"
-             spellcheck="false" placeholder="https://www.instagram.com/p/…" required />
+             spellcheck="false" placeholder="Link Instagram / TikTok / X" required />
       <button id="link-submit" type="submit">Ambil CSV</button>
     </form>
     <p class="tool-status" id="tool-status" role="status" aria-live="polite"></p>
