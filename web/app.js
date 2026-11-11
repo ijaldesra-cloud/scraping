@@ -358,7 +358,7 @@
       if (i % step !== 0 && i !== rows.length - 1) return;
       s("text", {
         x: X(i), y: H - 14, "text-anchor": "middle", fill: C.text, "font-size": 10.5,
-      }, svg).textContent = r[xKey].replace("2026-", "");
+      }, svg).textContent = r[xKey].replace(/^\d{4}-/, "");
     });
   }
 
@@ -547,12 +547,10 @@
   /* ---------------- boot ---------------- */
   function init() {
     const m = D.meta;
-    const akunEl = document.getElementById("akun");
-    if (akunEl) akunEl.textContent = m.akun ? "@" + m.akun : "";
     document.getElementById("periode").textContent =
       `${m.dari} → ${m.sampai} · ${fmt(m.posts)} post · ${fmt(m.likes)} like · ${fmt(m.komentar_ditarik)} komentar`;
     document.getElementById("generated").textContent =
-      `Sumber: @${m.akun} · dibuat ${new Date().toLocaleString("id-ID")}`;
+      `Data historis · dibuat ${new Date().toLocaleString("id-ID")}`;
 
     renderKpi();
 
