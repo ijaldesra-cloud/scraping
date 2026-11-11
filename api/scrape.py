@@ -45,7 +45,10 @@ if ROOT not in sys.path:
 import config  # noqa: E402,F401  (memuat .env saat dijalankan lokal)
 from sentiment import score as sentiment_score  # noqa: E402
 
-IG_RE = re.compile(r"instagram\.com/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)", re.I)
+# Username opsional: instagram.com/p/KODE, /reel/KODE, /akun/p/KODE, /akun/reel/KODE
+IG_RE = re.compile(
+    r"instagram\.com/(?:[A-Za-z0-9._]{1,30}/)?(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)", re.I
+)
 IG_BARE_RE = re.compile(r"^[A-Za-z0-9_-]{5,20}$")
 TT_RE = re.compile(r"tiktok\.com/(?:@[A-Za-z0-9_.-]+/)?(?:video|photo|v)/(\d{6,25})", re.I)
 TT_SHORT_PATH_RE = re.compile(r"^/(?:t/)?([A-Za-z0-9]{5,})/?$")
@@ -119,7 +122,8 @@ def parse_target(raw: str) -> tuple[str, str]:
         return "tiktok", ""
     if host and "instagram.com" in host:
         raise BadRequest(
-            "Link Instagram tidak dikenali. Contoh: https://www.instagram.com/p/xxxxx/"
+            "Link Instagram tidak dikenali. Tempel link post/reel, contoh: "
+            "https://www.instagram.com/p/xxxxx/ atau https://www.instagram.com/reel/xxxxx/"
         )
     if host and ("tiktok.com" in host or "douyin.com" in host):
         raise BadRequest(
