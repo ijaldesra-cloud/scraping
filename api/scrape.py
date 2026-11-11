@@ -36,7 +36,7 @@ import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -259,6 +259,11 @@ def _ig_comment_error(exc: Exception) -> str:
             "Instagram menolak daftar komentar tanpa sesi login. Set env var "
             "IG_USERNAME dan IG_SESSIONID di server, lalu coba lagi."
         )
+    if "feedback_required" in text or name == "AbortDownloadException":
+        return (
+            "Instagram menolak permintaan komentar (feedback_required). Login ulang di "
+            "browser lalu perbarui IG_SESSIONID dan IG_CSRFTOKEN."
+        )
     if name in ("TooManyRequestsException", "ConnectionException") or "429" in text:
         return "Instagram membatasi permintaan komentar (rate limit). Coba lagi beberapa menit."
     if "timeout" in text or name in ("ReadTimeout", "TimeoutError"):
@@ -292,6 +297,141 @@ def _ig_comments(post) -> tuple[list[dict], str]:
     return rows[:MAX_COMMENTS], ""
 
 
+IG_APP_ID = "936619743392459"
+IG_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+
+
+def _shortcode_to_media_id(shortcode: str) -> str:
+    """Konversi shortcode post (DfmgoUHnY7R) ke media id numerik Instagram."""
+    value = 0
+    for char in shortcode:
+        value = value * 64 + IG_ALPHABET.index(char)
+    return str(value)
+
+
+def _ig_api_headers() -> dict:
+    """Header API web Instagram, memakai sesi dari env bila ada."""
+    headers = {
+        "x-ig-app-id": IG_APP_ID,
+        "referer": "https://www.instagram.com/",
+        "x-requested-with": "XMLHttpRequest",
+    }
+    sessionid = os.environ.get("IG_SESSIONID", "").strip()
+    if sessionid:
+        cookie = f"sessionid={sessionid}"
+        csrf = os.environ.get("IG_CSRFTOKEN", "").strip()
+        if csrf:
+            cookie += f"; csrftoken={csrf}"
+        headers["cookie"] = cookie
+    return headers
+
+
+def _ig_api_media_url(node: dict) -> str:
+    if not isinstance(node, dict):
+        return ""
+    videos = node.get("video_versions") or []
+    if videos and isinstance(videos[0], dict) and videos[0].get("url"):
+        return str(videos[0]["url"])
+    candidates = (node.get("image_versions2") or {}).get("candidates") or []
+    if candidates and isinstance(candidates[0], dict) and candidates[0].get("url"):
+        return str(candidates[0]["url"])
+    return ""
+
+
+def _ig_api_comments(media_id: str, headers: dict) -> tuple[list[dict], str]:
+    """Komentar lewat API web (tanpa GraphQL). Balasan tidak ikut diambil."""
+    rows: list[dict] = []
+    min_id = ""
+    for _ in range(8):
+        endpoint = (
+            f"https://i.instagram.com/api/v1/media/{media_id}/comments/"
+            "?can_support_threading=true&permalink_enabled=false"
+        )
+        if min_id:
+            endpoint += f"&min_id={quote(min_id)}"
+        try:
+            payload = _http_json(endpoint, headers)
+        except ScrapeError as exc:
+            if not rows:
+                return [], f"Komentar gagal diambil dari Instagram ({exc})"
+            break
+        batch = payload.get("comments")
+        if not isinstance(batch, list) or not batch:
+            break
+        for item in batch:
+            if not isinstance(item, dict):
+                continue
+            rows.append(_comment_row(
+                (item.get("user") or {}).get("username", ""),
+                item.get("text"), item.get("comment_like_count"),
+                _from_epoch(item.get("created_at")), None,
+            ))
+            if len(rows) >= MAX_COMMENTS:
+                break
+        if len(rows) >= MAX_COMMENTS:
+            break
+        min_id = str(payload.get("next_min_id") or "")
+        if not min_id:
+            break
+
+    if not rows:
+        if os.environ.get("IG_SESSIONID", "").strip():
+            return [], (
+                "Instagram menolak daftar komentar untuk sesi ini (balasan \"fail\"), "
+                "tapi data post tetap terisi. Login ulang di browser lalu perbarui "
+                "IG_SESSIONID dan IG_CSRFTOKEN."
+            )
+        return [], (
+            "Daftar komentar hanya bisa dibaca dengan sesi login. Isi IG_SESSIONID "
+            "dan IG_CSRFTOKEN, lalu coba lagi."
+        )
+    return rows[:MAX_COMMENTS], "Balasan (reply) komentar tidak ikut pada mode cadangan."
+
+
+def _ig_api_post(shortcode: str) -> dict:
+    """Jalur cadangan saat endpoint GraphQL menolak ("feedback_required")."""
+    try:
+        media_id = _shortcode_to_media_id(shortcode)
+    except ValueError:
+        raise ScrapeError("Kode post Instagram tidak valid.")
+
+    headers = _ig_api_headers()
+    payload = _http_json(f"https://i.instagram.com/api/v1/media/{media_id}/info/", headers)
+    items = payload.get("items") or []
+    item = items[0] if items and isinstance(items[0], dict) else None
+    if not item:
+        raise ScrapeError("Post tidak ditemukan, dihapus, atau bukan akun publik.")
+
+    media: list[str] = []
+    if item.get("media_type") == 8:
+        for node in item.get("carousel_media") or []:
+            url = _ig_api_media_url(node)
+            if url:
+                media.append(url)
+    else:
+        url = _ig_api_media_url(item)
+        if url:
+            media.append(url)
+
+    comments, comment_note = _ig_api_comments(media_id, headers)
+    taken_at = _from_epoch(item.get("taken_at"))
+    type_map = {1: "foto", 2: "video", 8: "sidecar"}
+    code = str(item.get("code") or shortcode)
+
+    meta = {
+        "platform": "instagram",
+        "shortcode": code,
+        "url": f"https://www.instagram.com/p/{code}/",
+        "date": taken_at.strftime("%Y-%m-%d") if taken_at else "",
+        "type": type_map.get(item.get("media_type"), "post"),
+        "author": (item.get("user") or {}).get("username", ""),
+        "likes": _to_int(item.get("like_count")),
+        "comment_count": _to_int(item.get("comment_count")),
+        "caption": ((item.get("caption") or {}).get("text") or ""),
+    }
+    return {"meta": meta, "media": media, "comments": comments, "note": comment_note}
+
+
 def _instagram(post_id: str) -> dict:
     import instaloader
     from instaloader import exceptions as il_exc
@@ -305,8 +445,19 @@ def _instagram(post_id: str) -> dict:
 
     loader = _ig_loader()
 
+    # GraphQL kadang membalas "feedback_required"; API web jadi jalur cadangan.
+    graphql_down = tuple(
+        exc
+        for name in (
+            "AbortDownloadException", "BadResponseException", "QueryReturnedBadRequestException"
+        )
+        if (exc := getattr(il_exc, name, None)) is not None
+    )
+
     try:
         post = instaloader.Post.from_shortcode(loader.context, post_id)
+    except graphql_down:
+        return _ig_api_post(post_id)
     except not_found:
         raise ScrapeError("Post tidak ditemukan, dihapus, atau bukan akun publik.")
     except il_exc.LoginRequiredException:
