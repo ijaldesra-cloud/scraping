@@ -1,0 +1,12 @@
+.venv/
+node_modules/
+.vercel/
+.env
+.env.local
+data/session-*
+data/*.jsonl
+data/*.csv
+data/*.log
+data/iterator_state.json
+data/tmp_*
+__pycache__/

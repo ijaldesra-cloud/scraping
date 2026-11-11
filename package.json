@@ -1,0 +1,13 @@
+{
+  "name": "scarping-ig",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Resolver link media Instagram (foto/video) memakai @coflyn/scrapr",
+  "main": "resolve_media.js",
+  "scripts": {
+    "media": "node resolve_media.js"
+  },
+  "dependencies": {
+    "@coflyn/scrapr": "^1.4.0"
+  }
+}

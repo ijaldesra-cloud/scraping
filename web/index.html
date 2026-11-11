@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EDA — Respon Publik IG @humas.polrespurwakarta</title>
+<meta name="description" content="Dashboard EDA respon publik Instagram @humas.polrespurwakarta, plus ambil CSV dari satu link post." />
+<meta name="theme-color" content="#0e1116" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Respon Publik" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="icon" href="icon-192.png" type="image/png" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <p class="eyebrow">Exploratory Data Analysis</p>
+    <h1>Respon Publik <span>@humas.polrespurwakarta</span></h1>
+    <p class="sub" id="periode">Memuat periode…</p>
+    <p class="note">
+      Sejak pisah sambut Kapolres Purwakarta AKBP I Dewa Putu Gede Anom Danujaya
+      → AKBP Febri Nurzam.
+    </p>
+    <button class="install-btn" id="install" type="button" hidden>Pasang aplikasi</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- KPI -->
+  <section class="kpi-grid" id="kpi"></section>
+
+  <section class="grid two">
+    <article class="card">
+      <header>
+        <h2>Tren like per minggu</h2>
+        <p>Total like yang diterima tiap minggu.</p>
+      </header>
+      <div class="chart" id="chart-likes"></div>
+    </article>
+
+    <article class="card">
+      <header>
+        <h2>Tren komentar per minggu</h2>
+        <p>Jumlah komentar yang masuk tiap minggu.</p>
+      </header>
+      <div class="chart" id="chart-comments"></div>
+    </article>
+  </section>
+
+  <section class="grid two">
+    <article class="card">
+      <header>
+        <h2>Volume posting per bulan</h2>
+        <p>Berapa banyak konten dipublikasikan setiap bulan.</p>
+      </header>
+      <div class="chart" id="chart-monthly"></div>
+    </article>
+
+    <article class="card">
+      <header>
+        <h2>Distribusi like per post</h2>
+        <p>Seberapa timpang sebaran engagement antar post.</p>
+      </header>
+      <div class="chart" id="chart-hist"></div>
+    </article>
+  </section>
+
+  <section class="grid three">
+    <article class="card">
+      <header>
+        <h2>Sentimen komentar</h2>
+        <p>Klasifikasi berbasis kamus kata.</p>
+      </header>
+      <div class="chart donut" id="chart-sentiment"></div>
+      <ul class="legend" id="legend-sentiment"></ul>
+    </article>
+
+    <article class="card">
+      <header>
+        <h2>Tema komentar</h2>
+        <p>Topik yang paling sering muncul.</p>
+      </header>
+      <div class="chart" id="chart-themes"></div>
+    </article>
+
+    <article class="card">
+      <header>
+        <h2>Isu paling dibicarakan</h2>
+        <p>Frasa dua kata tersering di kolom komentar.</p>
+      </header>
+      <div class="chart" id="chart-phrases"></div>
+    </article>
+  </section>
+
+  <section class="grid two">
+    <article class="card">
+      <header>
+        <h2>Like vs komentar per post</h2>
+        <p>Tiap titik satu post. Garis putus-putus = rata-rata.</p>
+      </header>
+      <div class="chart" id="chart-scatter"></div>
+    </article>
+
+    <article class="card">
+      <header>
+        <h2>Pola jam posting</h2>
+        <p>Distribusi jam unggah (UTC).</p>
+      </header>
+      <div class="chart" id="chart-hour"></div>
+    </article>
+  </section>
+
+  <section class="grid two">
+    <article class="card">
+      <header>
+        <h2>Hari posting & rata-rata like</h2>
+        <p>Rata-rata like per post menurut hari.</p>
+      </header>
+      <div class="chart" id="chart-dow"></div>
+    </article>
+
+    <article class="card">
+      <header>
+        <h2>Jenis konten</h2>
+        <p>Perbandingan video dan foto.</p>
+      </header>
+      <div class="chart donut" id="chart-type"></div>
+      <ul class="legend" id="legend-type"></ul>
+    </article>
+  </section>
+
+  <section class="card">
+    <header>
+      <h2>12 post paling banyak dikomentari</h2>
+      <p>Klik judul untuk membuka post aslinya.</p>
+    </header>
+    <div class="table-wrap">
+      <table id="table-posts">
+        <thead>
+          <tr><th>Tanggal</th><th>Like</th><th>Komentar</th><th>Caption</th><th>Link</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <header>
+      <h2>30 komentar paling banyak disukai</h2>
+      <p>Sinyal paling kuat soal apa yang sebenarnya direspons publik.</p>
+    </header>
+    <div class="table-wrap">
+      <table id="table-comments">
+        <thead>
+          <tr><th>Like</th><th>Akun</th><th>Komentar</th><th>Sentimen</th><th>Post</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card tools" id="tools">
+    <header>
+      <h2>Ambil CSV dari link post</h2>
+      <p>Tempel link post atau reel Instagram publik, lalu unduh datanya sebagai CSV.
+         Fitur ini memanggil backend <code>/api/scrape</code> (jalan di Vercel).</p>
+    </header>
+    <form class="tool-form" id="link-form">
+      <label class="sr-only" for="link-input">Link post Instagram</label>
+      <input id="link-input" name="url" type="url" inputmode="url" autocomplete="off"
+             spellcheck="false" placeholder="https://www.instagram.com/p/…" required />
+      <button id="link-submit" type="submit">Ambil CSV</button>
+    </form>
+    <p class="tool-status" id="tool-status" role="status" aria-live="polite"></p>
+    <div class="tool-result" id="tool-result" hidden></div>
+  </section>
+
+  <section class="card caveat">
+    <h2>Catatan metodologi</h2>
+    <ul>
+      <li>Data diambil dari profil publik Instagram dengan <code>instaloader</code>;
+          link media di-resolve lewat <code>@coflyn/scrapr</code>.</li>
+      <li>Komentar yang dihapus atau dibatasi Instagram tidak ikut terambil, jadi angka
+          riil bisa lebih besar dari yang tampil.</li>
+      <li>Sentimen memakai kamus kata + negasi sederhana, bukan model ML. Anggap sebagai
+          sinyal kasar, bukan klasifikasi final.</li>
+      <li><code>likes = -1</code> (disembunyikan Instagram) dihitung 0.</li>
+    </ul>
+  </section>
+
+</main>
+
+<footer>
+  <p id="generated"></p>
+</footer>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <button class="modal-x" data-close aria-label="Tutup">&times;</button>
+    <h3 id="modal-title"></h3>
+    <p id="modal-sub"></p>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script src="pwa.js"></script>
+</body>
+</html>
