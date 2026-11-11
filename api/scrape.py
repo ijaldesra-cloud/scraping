@@ -36,7 +36,7 @@ import urllib.request
 from collections import Counter
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlparse, urlsplit
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -787,6 +787,21 @@ def _client_ip(headers) -> str:
     return (forwarded.split(",")[0].strip() or headers.get("x-real-ip") or "local").strip()
 
 
+WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
+SERVE_WEB = False  # hanya aktif saat dijalankan lokal (`python api/scrape.py`)
+STATIC_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".webmanifest": "application/manifest+json; charset=utf-8",
+    ".png": "image/png",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".txt": "text/plain; charset=utf-8",
+}
+
+
 class handler(BaseHTTPRequestHandler):
     """Handler Vercel (`@vercel/python`) sekaligus server lokal."""
 
@@ -805,7 +820,27 @@ class handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):  # noqa: N802
         self._send(204, {})
 
+    def _send_file(self, relative: str) -> None:
+        """Sajikan file dari folder web/ untuk pemakaian lokal."""
+        target = os.path.normpath(os.path.join(WEB_DIR, relative.lstrip("/")))
+        if not target.startswith(WEB_DIR) or not os.path.isfile(target):
+            self._send(404, {"ok": False, "error": "Halaman tidak ditemukan."})
+            return
+        with open(target, "rb") as handle:
+            body = handle.read()
+        kind = STATIC_TYPES.get(os.path.splitext(target)[1].lower(), "application/octet-stream")
+        self.send_response(200)
+        self.send_header("content-type", kind)
+        self.send_header("content-length", str(len(body)))
+        self.send_header("cache-control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):  # noqa: N802
+        if SERVE_WEB and not self.path.startswith("/api/"):
+            path = urlsplit(self.path).path
+            self._send_file("index.html" if path in ("", "/") else path)
+            return
         self._send(200, {
             "ok": True,
             "endpoint": "/api/scrape",
@@ -856,6 +891,8 @@ class handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     from http.server import ThreadingHTTPServer
 
+    SERVE_WEB = True
     port = int(os.environ.get("PORT", "8000"))
-    print(f"API lokal: http://127.0.0.1:{port}/api/scrape")
+    print(f"Dashboard lokal: http://127.0.0.1:{port}/")
+    print(f"API lokal:       http://127.0.0.1:{port}/api/scrape")
     ThreadingHTTPServer(("127.0.0.1", port), handler).serve_forever()

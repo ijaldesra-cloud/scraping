@@ -167,14 +167,15 @@ menolak permintaan anonim, jadi set env var dulu (lihat bawah).
 Jalankan lokal tanpa Vercel:
 
 ```bash
-.venv/Scripts/python api/scrape.py     # http://127.0.0.1:8000/api/scrape
+.venv/Scripts/python api/scrape.py     # dashboard + API di http://127.0.0.1:8000/
 # atau, kalau CLI Vercel sudah terpasang:
 vercel dev
 ```
 
-Form di dashboard memanggil `api/scrape` relatif terhadap halaman, jadi saat
-menguji dengan `python api/scrape.py` langsung (port 8000) dashboard harus dibuka
-lewat server yang sama origin-nya — cara paling mudah: `vercel dev`.
+Saat dijalankan sebagai `__main__`, server lokal itu juga menyajikan folder `web/`,
+jadi form "Ambil CSV" di dashboard langsung memanggil `api/scrape` di origin yang
+sama. Ini jalur yang dipakai untuk Instagram: Instagram menolak IP datacenter
+seperti Vercel, tapi dari IP rumahan/kantor metadata post biasanya berhasil.
 
 ## Deploy ke Vercel
 
