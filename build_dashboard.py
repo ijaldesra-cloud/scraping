@@ -127,7 +127,7 @@ def main() -> int:
     data = {
         "meta": {
             "akun": config.USERNAME,
-            "dari": config.ANCHOR_DATE,
+            "dari": config.ANCHOR_DATE or posts[0]["date_utc"][:10],
             "sampai": posts[-1]["date_utc"][:10],
             "posts": len(posts),
             "likes": total_likes,

@@ -1,9 +1,9 @@
-# Scraping IG @humas.polrespurwakarta — pasca pisah sambut Kapolres
+# Scraper Instagram → data, laporan, dashboard
 
-Mengambil **post + komentar** akun Instagram publik `humas.polrespurwakarta`
-sejak **29 Juli 2026** (sertijab/pisah sambut Kapolres Purwakarta dari
-AKBP I Dewa Putu Gede Anom Danujaya ke AKBP Febri Nurzam) sampai hari ini,
-lalu menyusunnya jadi data terstruktur + laporan respon publik.
+Tools serbaguna untuk mengambil **post + komentar** akun Instagram publik mana
+pun, lalu menyusunnya jadi data terstruktur (CSV/JSON), laporan naratif, dan
+dashboard EDA. Akun target dan rentang tanggal diatur di `config.py` atau lewat
+environment variable — tidak ada yang di-hardcode ke satu akun.
 
 ## Isi project
 
@@ -18,7 +18,26 @@ lalu menyusunnya jadi data terstruktur + laporan respon publik.
 | `vercel.json` | Konfigurasi deploy Vercel (static `web/` + Python function) |
 | `make_session.py` | Bikin file session instaloader dari cookie `sessionid` |
 | `sentiment.py` | Kamus sentimen bahasa Indonesia |
-| `config.py` | Username, tanggal mulai (29 Juli 2026), jeda request |
+| `config.py` | Akun target, batas tanggal, jeda request |
+
+## Pilih akun target
+
+```bash
+# Linux/macOS
+export IG_TARGET=namakun
+# Windows (PowerShell)
+$env:IG_TARGET = "namakun"
+# Windows (bash/Git Bash)
+export IG_TARGET=namakun
+```
+
+Atau edit `USERNAME` di `config.py`. Batas tanggal opsional:
+
+| Env var | Isi |
+| --- | --- |
+| `IG_TARGET` | akun Instagram yang di-scrape, tanpa `@` |
+| `IG_SINCE` | hanya analisis post sejak tanggal ini (`YYYY-MM-DD`); kosong = semua post |
+| `IG_SCAN_SINCE` | post yang lebih tua dari ini tidak diambil (default: `IG_SINCE`) |
 
 ## Setup
 
@@ -40,9 +59,12 @@ Pilih salah satu:
 **A. Login lewat terminal sendiri (password tidak masuk chat)**
 
 ```bash
-.venv/Scripts/instaloader --login humas.polrespurwakarta
+.venv/Scripts/instaloader --login akun_login_anda
 # masukkan password + kode 2FA kalau diminta
 ```
+
+Akun login boleh berbeda dari akun target; yang perlu login adalah akun yang
+dipakai untuk melihat konten publik.
 
 **B. Pakai cookie `sessionid`**
 
@@ -54,7 +76,7 @@ Pilih salah satu:
    ```
 3. Tempel cookie saat diminta (input tersembunyi).
 
-Session tersimpan di `data/session-humas`. Perlakukan seperti password.
+Session tersimpan di `data/session`. Perlakukan seperti password.
 `collect.py` otomatis memakainya kalau ada. Untuk mencabut akses: logout
 Instagram di perangkat tersebut.
 
@@ -163,7 +185,9 @@ lewat server yang sama origin-nya — cara paling mudah: `vercel dev`.
 
    | Nama | Wajib | Isi |
    | --- | --- | --- |
-   | `IG_USERNAME` | disarankan | akun Instagram yang dipakai |
+   | `IG_TARGET` | tidak | akun target dashboard (default dari `config.py`) |
+   | `IG_SINCE` | tidak | batas awal analisis, `YYYY-MM-DD` |
+   | `IG_USERNAME` | disarankan | akun Instagram yang dipakai untuk login |
    | `IG_SESSIONID` | disarankan | nilai cookie `sessionid` akun itu |
    | `IG_CSRFTOKEN` | opsional | cookie `csrftoken` (kadang diperlukan) |
    | `TIKTOK_COOKIES` | opsional | header `Cookie` TikTok (mis. `ttwid=…; msToken=…`) untuk komentar |

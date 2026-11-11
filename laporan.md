@@ -1,6 +1,6 @@
 # Respon Publik IG @humas.polrespurwakarta
 
-Periode **2026-07-29 – 2026-10-28** (sejak pisah sambut Kapolres Purwakarta AKBP I Dewa Putu Gede Anom Danujaya → AKBP Febri Nurzam).
+Periode **2026-07-29 – 2026-10-28**.
 
 ## 1. Angka kunci
 
@@ -33,24 +33,7 @@ Periode **2026-07-29 – 2026-10-28** (sejak pisah sambut Kapolres Purwakarta AK
 | 2026-09 | 111 | 37,028 | 1,880 |
 | 2026-10 | 112 | 32,665 | 795 |
 
-## 4. Post pisah sambut / sertijab
-
-| Tanggal | Like | Komentar | Link |
-| --- | --- | --- | --- |
-| 2026-07-29 | 133 | 0 | https://www.instagram.com/p/DbW8diGE8hQ/ |
-| 2026-07-29 | 264 | 21 | https://www.instagram.com/p/DbW8sdIkyr3/ |
-| 2026-07-29 | 280 | 33 | https://www.instagram.com/p/DbXbuADk1y1/ |
-| 2026-08-03 | 90 | 0 | https://www.instagram.com/p/DbkFPdOBGpI/ |
-| 2026-09-09 | 97 | 1 | https://www.instagram.com/p/DdD-XN7Bsbo/ |
-| 2026-09-26 | 133 | 5 | https://www.instagram.com/p/Ddv47Blzlvo/ |
-| 2026-09-26 | 77 | 2 | https://www.instagram.com/p/Ddv5EWZTDOq/ |
-| 2026-09-26 | 47 | 1 | https://www.instagram.com/p/Ddv5MJMT5GP/ |
-| 2026-10-03 | 54 | 1 | https://www.instagram.com/p/DeBpDv0Be7D/ |
-| 2026-10-08 | 62 | 0 | https://www.instagram.com/p/DeN8788k5uk/ |
-| 2026-10-14 | 61 | 0 | https://www.instagram.com/p/Ded71lUE21Z/ |
-| 2026-10-25 | 1,224 | 7 | https://www.instagram.com/p/De6gtcRBiKh/ |
-
-## 5. Aktivitas per minggu
+## 4. Aktivitas per minggu
 
 | Minggu | Post | Like | Komentar |
 | --- | --- | --- | --- |
@@ -69,7 +52,7 @@ Periode **2026-07-29 – 2026-10-28** (sejak pisah sambut Kapolres Purwakarta AK
 | 2026-W43 | 35 | 22,536 | 333 |
 | 2026-W44 | 13 | 887 | 61 |
 
-## 6. Sentimen komentar
+## 5. Sentimen komentar
 
 - Positif: **999** (37.3%)
 - Negatif: **82** (3.1%)
@@ -77,7 +60,7 @@ Periode **2026-07-29 – 2026-10-28** (sejak pisah sambut Kapolres Purwakarta AK
 
 > Sentimen dihitung dengan kamus kata Indonesia + penanganan negasi sederhana. Baca `data/comments.csv` untuk verifikasi manual; ini sinyal kasar, bukan klasifikasi sempurna.
 
-## 7. Tema yang muncul di komentar
+## 6. Tema yang muncul di komentar
 
 | Tema | Jumlah komentar |
 | --- | --- |
@@ -90,7 +73,7 @@ Periode **2026-07-29 – 2026-10-28** (sejak pisah sambut Kapolres Purwakarta AK
 | Bantuan sosial / air bersih | 12 |
 | Narkoba | 8 |
 
-## 8. Isu yang paling ramai dibicarakan
+## 7. Isu yang paling ramai dibicarakan
 
 | Frasa | Kemunculan |
 | --- | --- |
@@ -135,7 +118,7 @@ Contoh komentar untuk isu teratas:
 > — @jaka.m.p, 2 like, https://www.instagram.com/p/DbXbuADk1y1/
 
 
-## 9. Post dengan komentar terbanyak
+## 8. Post dengan komentar terbanyak
 
 | Tanggal | Komentar | Like | Link | Caption |
 | --- | --- | --- | --- | --- |
@@ -150,7 +133,7 @@ Contoh komentar untuk isu teratas:
 | 2026-09-30 | 85 | 1,259 | https://www.instagram.com/p/Dd6HSK2T_hI/ | mancing bareng viking & jakmania: rivalitas 90 menit, persaudaraan sel… |
 | 2026-10-24 | 58 | 1,372 | https://www.instagram.com/p/De328XmSG0c/ | sampurasun sobat mulai 26 oktober 2026 - 08 november 2026 satlantas po… |
 
-## 10. Post dengan like terbanyak
+## 9. Post dengan like terbanyak
 
 | Tanggal | Like | Komentar | Link | Caption |
 | --- | --- | --- | --- | --- |
@@ -165,7 +148,7 @@ Contoh komentar untuk isu teratas:
 | 2026-09-30 | 1,259 | 85 | https://www.instagram.com/p/Dd6HSK2T_hI/ | mancing bareng viking & jakmania: rivalitas 90 menit, persaudaraan sel… |
 | 2026-10-25 | 1,224 | 7 | https://www.instagram.com/p/De6gtcRBiKh/ | momen haru saat pemberangkatan viking, warga cikopak sampaikan terima … |
 
-## 11. Komentar paling banyak disukai (sinyal publik)
+## 10. Komentar paling banyak disukai (sinyal publik)
 
 | Like | Penulis | Komentar | Post |
 | --- | --- | --- | --- |
@@ -185,7 +168,7 @@ Contoh komentar untuk isu teratas:
 | 74 | @jakmania_rock_n_roll | rivalitas hanya 90 menit terimakasih bapa kapolres purwakarta beserta jajarannya sudah menjaga purwakarta tetap kondusif sedikit saran dari kami bikin acara keg | https://www.instagram.com/p/DdON_QnBkSV/ |
 | 71 | @asep_saeful_rohman | lebih diseringkan pak soalnya suka tiba" belok dan nerobos mereka | https://www.instagram.com/p/Dc52075yxDy/ |
 
-## 12. Komentator paling aktif
+## 11. Komentator paling aktif
 
 | Akun | Jumlah komentar |
 | --- | --- |
@@ -205,7 +188,7 @@ Contoh komentar untuk isu teratas:
 | @aries.chandradinata | 5 |
 | @deaho.y | 5 |
 
-## 13. Catatan metodologi
+## 12. Catatan metodologi
 
 - Sumber: profil publik Instagram, diambil dengan `instaloader` (tanpa login).
 - Link media (foto/video) di-resolve dengan `@coflyn/scrapr` → `data/media.csv`.

@@ -1,4 +1,4 @@
-"""Analisis post + komentar Instagram humas.polrespurwakarta.
+"""Analisis post + komentar satu akun Instagram (lihat config.USERNAME).
 
 Membaca data/posts.jsonl dan data/comments.jsonl (hasil collect.py), lalu:
   - data/posts.csv, data/comments.csv   -> data siap olah di Excel/Sheets
@@ -53,12 +53,11 @@ STOPWORDS = {
     "sudah", "masih", "sama", "kita", "kami", "saya", "anda", "para", "pada",
     "adalah", "ini", "itu", "dan", "atau", "tapi", "kalau", "kalo", "biar",
     "banget", "bgt", "sih", "aja", "saja", "dong", "deh", "mah", "teh", "nya",
-    "polres", "purwakarta", "polri", "polisi", "kapolres", "pak", "bapak", "min",
     "terima", "kasih", "makasih", "semoga", "mari", "ayo", "jangan", "harus",
     "lebih", "sangat", "paling", "banyak", "orang", "kalo", "gak", "nggak", "engga",
     "the", "and", "you", "good", "nice", "sangat", "sekali", "banget", "malah",
-    "humas", "polrespurwakarta", "instagram", "video", "foto", "konten",
-}
+    "instagram", "video", "foto", "konten",
+} | {w.lower() for w in config.EXTRA_STOPWORDS}
 
 
 def top_phrases(comments: list[dict], limit: int = 10) -> list[tuple[str, int]]:
@@ -105,7 +104,7 @@ def main() -> None:
     posts.sort(key=lambda p: p["date_utc"])
 
     if not posts:
-        raise SystemExit("Belum ada data post sejak tanggal pisah sambut. Jalankan collect.py dulu.")
+        raise SystemExit("Belum ada data post di rentang tanggal ini. Jalankan collect.py dulu.")
 
     media_by_post = defaultdict(list)
     if os.path.exists(config.MEDIA_FILE):
@@ -179,13 +178,6 @@ def main() -> None:
     top_by_likes = sorted(posts, key=lambda p: -p["likes"])[:10]
     top_comments = sorted(comments, key=lambda c: -c["likes"])[:15]
 
-    TRANSITION_WORDS = ("pisah sambut", "sertijab", "serah terima jabatan",
-                        "estafet kepemimpinan", "pindah tugas", "terima kasih",
-                        "selamat datang", "tongkat estafet")
-    pisah_sambut_posts = [p for p in posts
-                          if any(k in norm(p["caption"]) for k in TRANSITION_WORDS)
-                          and any(n in norm(p["caption"]) for n in ("anom", "febri"))]
-
     phrases = top_phrases(comments)
     monthly: dict[str, dict[str, int]] = defaultdict(lambda: {"posts": 0, "likes": 0, "comments": 0})
     for p in posts:
@@ -196,7 +188,8 @@ def main() -> None:
 
     summary = {
         "akun": config.USERNAME,
-        "periode": {"dari": config.ANCHOR_DATE, "sampai": posts[-1]["date_utc"][:10]},
+        "periode": {"dari": config.ANCHOR_DATE or posts[0]["date_utc"][:10],
+                    "sampai": posts[-1]["date_utc"][:10]},
         "jumlah_post": len(posts),
         "total_likes": total_likes,
         "total_komentar_meta": total_comments_meta,
@@ -209,11 +202,6 @@ def main() -> None:
         "sentimen": dict(sentiment_counts),
         "tema": dict(theme_counts.most_common(12)),
         "top_komentator": dict(commenters.most_common(10)),
-        "post_pisah_sambut": [
-            {"url": p["url"], "tanggal": p["date_utc"][:10], "likes": p["likes"],
-             "komentar": p["comment_count"], "caption": norm(p["caption"])[:180]}
-            for p in pisah_sambut_posts
-        ],
     }
     with open(f"{config.DATA_DIR}/summary.json", "w", encoding="utf-8") as fh:
         json.dump(summary, fh, ensure_ascii=False, indent=2)
@@ -227,9 +215,8 @@ def main() -> None:
 
     A(f"# Respon Publik IG @{config.USERNAME}")
     A("")
-    A(f"Periode **{config.ANCHOR_DATE} – {posts[-1]['date_utc'][:10]}** "
-      f"(sejak pisah sambut Kapolres Purwakarta AKBP I Dewa Putu Gede Anom Danujaya "
-      f"→ AKBP Febri Nurzam).")
+    A(f"Periode **{config.ANCHOR_DATE or posts[0]['date_utc'][:10]} – "
+      f"{posts[-1]['date_utc'][:10]}**.")
     A("")
     A("## 1. Angka kunci")
     A("")
@@ -279,17 +266,7 @@ def main() -> None:
         d = monthly[m]
         A(f"| {m} | {d['posts']} | {d['likes']:,} | {d['comments']:,} |")
     A("")
-    A("## 4. Post pisah sambut / sertijab")
-    A("")
-    if pisah_sambut_posts:
-        A("| Tanggal | Like | Komentar | Link |")
-        A("| --- | --- | --- | --- |")
-        for p in pisah_sambut_posts:
-            A(f"| {p['date_utc'][:10]} | {p['likes']:,} | {p['comment_count']:,} | {p['url']} |")
-    else:
-        A("_Tidak ada post yang menyebut pisah sambut/sertijab Anom–Febri di rentang ini._")
-    A("")
-    A("## 5. Aktivitas per minggu")
+    A("## 4. Aktivitas per minggu")
     A("")
     A("| Minggu | Post | Like | Komentar |")
     A("| --- | --- | --- | --- |")
@@ -297,7 +274,7 @@ def main() -> None:
         d = weekly_posts[wk]
         A(f"| {wk} | {d['posts']} | {d['likes']:,} | {d['comments']:,} |")
     A("")
-    A("## 6. Sentimen komentar")
+    A("## 5. Sentimen komentar")
     A("")
     A(f"- Positif: **{positif:,}** ({pct(positif, len(comments))})")
     A(f"- Negatif: **{negatif:,}** ({pct(negatif, len(comments))})")
@@ -306,7 +283,7 @@ def main() -> None:
     A("> Sentimen dihitung dengan kamus kata Indonesia + penanganan negasi sederhana. "
       "Baca `data/comments.csv` untuk verifikasi manual; ini sinyal kasar, bukan klasifikasi sempurna.")
     A("")
-    A("## 7. Tema yang muncul di komentar")
+    A("## 6. Tema yang muncul di komentar")
     A("")
     if theme_counts:
         A("| Tema | Jumlah komentar |")
@@ -316,7 +293,7 @@ def main() -> None:
     else:
         A("_Belum ada komentar terkumpul._")
     A("")
-    A("## 8. Isu yang paling ramai dibicarakan")
+    A("## 7. Isu yang paling ramai dibicarakan")
     A("")
     if phrases:
         A("| Frasa | Kemunculan |")
@@ -340,7 +317,7 @@ def main() -> None:
     else:
         A("_Belum ada komentar terkumpul._")
     A("")
-    A("## 9. Post dengan komentar terbanyak")
+    A("## 8. Post dengan komentar terbanyak")
     A("")
     A("| Tanggal | Komentar | Like | Link | Caption |")
     A("| --- | --- | --- | --- | --- |")
@@ -348,7 +325,7 @@ def main() -> None:
         A(f"| {p['date_utc'][:10]} | {p['comment_count']:,} | {p['likes']:,} | {p['url']} "
           f"| {norm(p['caption'])[:70]}… |")
     A("")
-    A("## 10. Post dengan like terbanyak")
+    A("## 9. Post dengan like terbanyak")
     A("")
     A("| Tanggal | Like | Komentar | Link | Caption |")
     A("| --- | --- | --- | --- | --- |")
@@ -356,7 +333,7 @@ def main() -> None:
         A(f"| {p['date_utc'][:10]} | {p['likes']:,} | {p['comment_count']:,} | {p['url']} "
           f"| {norm(p['caption'])[:70]}… |")
     A("")
-    A("## 11. Komentar paling banyak disukai (sinyal publik)")
+    A("## 10. Komentar paling banyak disukai (sinyal publik)")
     A("")
     A("| Like | Penulis | Komentar | Post |")
     A("| --- | --- | --- | --- |")
@@ -364,14 +341,14 @@ def main() -> None:
         text = norm(c["text"]).replace("|", "/")[:160]
         A(f"| {c['likes']:,} | @{c['author']} | {text} | {c['post_url']} |")
     A("")
-    A("## 12. Komentator paling aktif")
+    A("## 11. Komentator paling aktif")
     A("")
     A("| Akun | Jumlah komentar |")
     A("| --- | --- |")
     for user, n in commenters.most_common(15):
         A(f"| @{user} | {n:,} |")
     A("")
-    A("## 13. Catatan metodologi")
+    A("## 12. Catatan metodologi")
     A("")
     A("- Sumber: profil publik Instagram, diambil dengan `instaloader` (tanpa login).")
     A("- Link media (foto/video) di-resolve dengan `@coflyn/scrapr` → `data/media.csv`.")

@@ -547,6 +547,8 @@
   /* ---------------- boot ---------------- */
   function init() {
     const m = D.meta;
+    const akunEl = document.getElementById("akun");
+    if (akunEl) akunEl.textContent = m.akun ? "@" + m.akun : "";
     document.getElementById("periode").textContent =
       `${m.dari} → ${m.sampai} · ${fmt(m.posts)} post · ${fmt(m.likes)} like · ${fmt(m.komentar_ditarik)} komentar`;
     document.getElementById("generated").textContent =

@@ -88,9 +88,12 @@ def find_session() -> str | None:
     explicit = os.environ.get("IG_SESSIONFILE")
     if explicit and os.path.exists(explicit):
         return explicit
-    local = f"{config.DATA_DIR}/session-humas"
+    local = config.SESSION_FILE
     if os.path.exists(local):
         return local
+    legacy = f"{config.DATA_DIR}/session-humas"  # nama file versi lama
+    if os.path.exists(legacy):
+        return legacy
     try:
         cfg_dir = os.path.dirname(instaloader.instaloader.get_default_session_filename("probe"))
         if os.path.isdir(cfg_dir):

@@ -3,6 +3,7 @@ node_modules/
 .vercel/
 .env
 .env.local
+data/session
 data/session-*
 data/*.jsonl
 data/*.csv

@@ -1,7 +1,7 @@
 {
-  "name": "Respon Publik IG @humas.polrespurwakarta",
-  "short_name": "Respon Publik",
-  "description": "Dashboard EDA respon publik Instagram, plus ambil CSV dari satu link post.",
+  "name": "Dashboard Scraping Sosmed",
+  "short_name": "Scraper",
+  "description": "Dashboard EDA post & komentar, plus ambil CSV dari satu link post.",
   "lang": "id",
   "dir": "ltr",
   "start_url": "./",

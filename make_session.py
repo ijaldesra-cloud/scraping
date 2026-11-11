@@ -6,7 +6,7 @@ Cara pakai:
 Cookie diambil dari browser yang sudah login Instagram:
     F12 > Application/Storage > Cookies > https://www.instagram.com > sessionid
 
-File hasil: data/session-humas  (perlakukan seperti password, jangan dibagikan)
+File hasil: data/session  (perlakukan seperti password, jangan dibagikan)
 """
 
 from __future__ import annotations
@@ -20,12 +20,11 @@ import config
 
 
 def main() -> int:
-    username = input(f"Username Instagram yang login [{config.USERNAME}]: ").strip() \
-        or config.USERNAME
+    username = input("Username akun Instagram yang login: ").strip()
     sessionid = getpass.getpass("Tempel nilai cookie sessionid (tidak akan tampil): ").strip()
 
-    if not sessionid:
-        print("sessionid kosong, dibatalkan.")
+    if not username or not sessionid:
+        print("Username / sessionid kosong, dibatalkan.")
         return 1
     # Cookie kadang ter-copy dengan tanda kutip atau prefix "sessionid="
     sessionid = sessionid.strip("\"'")
@@ -39,12 +38,12 @@ def main() -> int:
         if not L.test_login():
             print("Cookie tidak valid / sudah kedaluwarsa. Login ulang di browser lalu ambil ulang.")
             return 2
-        L.save_session_to_file(f"{config.DATA_DIR}/session-humas")
+        L.save_session_to_file(config.SESSION_FILE)
     except Exception as exc:
         print(f"Gagal memakai session: {type(exc).__name__}: {exc}")
         return 2
 
-    print(f"OK. Session tersimpan di {config.DATA_DIR}/session-humas")
+    print(f"OK. Session tersimpan di {config.SESSION_FILE}")
     return 0
 
 
