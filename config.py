@@ -10,6 +10,22 @@ satu akun tertentu:
 
 import os
 
+
+def load_dotenv(path: str = ".env") -> None:
+    """Baca .env sederhana (KEY=value) kalau ada. Env sistem tetap menang."""
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            os.environ.setdefault(key.strip(), value.strip().strip("\"'").strip())
+
+
+load_dotenv()
+
 # Akun yang di-scrape. Ganti di sini atau lewat env IG_TARGET.
 USERNAME = (os.environ.get("IG_TARGET") or "humas.polrespurwakarta").strip().lstrip("@")
 

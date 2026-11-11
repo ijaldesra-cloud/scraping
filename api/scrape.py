@@ -42,6 +42,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+import config  # noqa: E402,F401  (memuat .env saat dijalankan lokal)
 from sentiment import score as sentiment_score  # noqa: E402
 
 IG_RE = re.compile(r"instagram\.com/(?:p|reel|reels|tv)/([A-Za-z0-9_-]+)", re.I)
@@ -245,7 +246,24 @@ def _ig_media_urls(post) -> list[str]:
     return [u for u in urls if u]
 
 
-def _ig_comments(post) -> list[dict]:
+def _ig_comment_error(exc: Exception) -> str:
+    """Ubah exception instaloader jadi kalimat yang bisa ditampilkan ke pengguna."""
+    name = type(exc).__name__
+    text = str(exc).lower()
+    if name == "LoginRequiredException" or "login" in text or "logged in" in text:
+        return (
+            "Instagram menolak daftar komentar tanpa sesi login. Set env var "
+            "IG_USERNAME dan IG_SESSIONID di server, lalu coba lagi."
+        )
+    if name in ("TooManyRequestsException", "ConnectionException") or "429" in text:
+        return "Instagram membatasi permintaan komentar (rate limit). Coba lagi beberapa menit."
+    if "timeout" in text or name in ("ReadTimeout", "TimeoutError"):
+        return "Pengambilan komentar terlalu lama (timeout). Coba lagi."
+    return f"Komentar gagal diambil dari Instagram ({name}). Coba lagi nanti."
+
+
+def _ig_comments(post) -> tuple[list[dict], str]:
+    """Ambil komentar + balasan. Mengembalikan (baris, catatan kegagalan)."""
     rows: list[dict] = []
     try:
         for comment in post.get_comments():
@@ -265,9 +283,9 @@ def _ig_comments(post) -> list[dict]:
                 pass
             if len(rows) >= MAX_COMMENTS:
                 break
-    except Exception:
-        pass
-    return rows[:MAX_COMMENTS]
+    except Exception as exc:  # jangan diam: pengguna perlu tahu kenapa kosong
+        return rows[:MAX_COMMENTS], _ig_comment_error(exc)
+    return rows[:MAX_COMMENTS], ""
 
 
 def _instagram(post_id: str) -> dict:
@@ -302,7 +320,7 @@ def _instagram(post_id: str) -> dict:
         raise ScrapeError("Gagal menghubungi Instagram (rate limit / jaringan). Coba lagi nanti.")
 
     media = _ig_media_urls(post)
-    comments = _ig_comments(post)
+    comments, comment_note = _ig_comments(post)
     type_map = {"GraphVideo": "video", "GraphImage": "foto", "GraphSidecar": "sidecar"}
 
     meta = {
@@ -316,7 +334,14 @@ def _instagram(post_id: str) -> dict:
         "comment_count": _to_int(post.comments),
         "caption": post.caption or "",
     }
-    return {"meta": meta, "media": media, "comments": comments, "note": ""}
+    if not comments and not comment_note and _to_int(post.comments) > 0:
+        comment_note = (
+            "Instagram membalas jumlah komentar, tapi daftarnya tidak bisa dibaca "
+            "(kemungkinan karena dibatasi untuk permintaan anonim). Set IG_SESSIONID "
+            "lalu coba lagi."
+        )
+
+    return {"meta": meta, "media": media, "comments": comments, "note": comment_note}
 
 
 # --------------------------------------------------------------------------
