@@ -449,7 +449,11 @@ def _instagram(post_id: str) -> dict:
     graphql_down = tuple(
         exc
         for name in (
-            "AbortDownloadException", "BadResponseException", "QueryReturnedBadRequestException"
+            "AbortDownloadException",
+            "BadResponseException",
+            "QueryReturnedBadRequestException",
+            "ConnectionException",
+            "TooManyRequestsException",
         )
         if (exc := getattr(il_exc, name, None)) is not None
     )
